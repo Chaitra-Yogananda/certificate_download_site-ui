@@ -37,6 +37,8 @@ The build output will be generated in the `dist/` folder.
 npm run preview
 ```
 
+Output directory - 'dist'
+
 ## CI/CD Pipeline
 
 This project includes a GitHub Actions workflow for continuous deployment to Azure Web App.
