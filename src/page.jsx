@@ -1,29 +1,55 @@
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Button } from './components/ui/button'
 import { Input } from './components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
 import { Badge } from './components/ui/badge'
 import { CheckCircle, Linkedin, Brain, Sparkles, Zap } from 'lucide-react'
+import { useMsalProfile } from './hooks/useMsalProfile'
+import { getCertificateBlob, triggerFileDownload } from './services/certificateService'
 
 export default function CertificateDownloadPage() {
   const [linkedinUrl, setLinkedinUrl] = useState('')
   const [isVerified, setIsVerified] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  useMsalProfile({ appendEmailToUrl: true })
+
+  const courseCode = useMemo(() => {
+    const segments = window.location.pathname.split('/').filter(Boolean)
+    return segments[0] ? decodeURIComponent(segments[0]) : ''
+  }, [])
+
+  const userEmail = useMemo(() => {
+    try {
+      const url = new URL(window.location.href)
+      return url.searchParams.get('email') || localStorage.getItem('userEmail') || ''
+    } catch {
+      return localStorage.getItem('userEmail') || ''
+    }
+  }, [window.location.search])
 
   const handleVerifyAndDownload = async () => {
-    if (!linkedinUrl.trim()) return
-
+    setError('')
+    if (!courseCode) {
+      setError('Invalid certificate link')
+      return
+    }
+    const email = userEmail
+    if (!email) {
+      setError('Unable to determine your email from Microsoft 365 login')
+      return
+    }
     setIsLoading(true)
-    // Simulate verification process
-    setTimeout(() => {
+    try {
+      const blob = await getCertificateBlob(courseCode, email)
+      triggerFileDownload(blob, `Certificate_${courseCode}.pdf`)
       setIsVerified(true)
+    } catch (e) {
+      setError(e?.message || 'Failed to download certificate')
+    } finally {
       setIsLoading(false)
-      // Trigger certificate download
-      const link = document.createElement('a')
-      link.href = '/ai-certificate-preview.jpg'
-      link.download = 'AI-Program-Certificate.pdf'
-      link.click()
-    }, 2000)
+    }
   }
 
   const handleLinkedInShare = () => {
@@ -106,6 +132,11 @@ export default function CertificateDownloadPage() {
             </p>
           </div>
 
+          {error && (
+            <div className="max-w-2xl mx-auto p-4 mb-4 bg-red-50 border border-red-200 text-red-700 rounded-lg">
+              {error}
+            </div>
+          )}
           <Card className="overflow-hidden shadow-2xl border-0 bg-white/95 backdrop-blur-md relative">
             <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 to-blue-500/20 rounded-lg blur-xl"></div>
             <div className="relative bg-white/90 backdrop-blur-sm rounded-lg">
@@ -201,24 +232,24 @@ export default function CertificateDownloadPage() {
                         />
                         <Button
                           onClick={handleVerifyAndDownload}
-                          disabled={!linkedinUrl.trim() || isLoading}
+                          disabled={isLoading || !courseCode || !userEmail}
                           className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white transition-all duration-300 hover:shadow-lg hover:scale-[1.02]"
                           size="lg"
                         >
                           {isLoading ? (
                             <>
                               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                              Verifying AI Achievement...
+                              Verifying & Downloading...
                             </>
                           ) : isVerified ? (
                             <>
                               <CheckCircle className="h-4 w-4 mr-2" />
-                              Download AI Certificate
+                              Downloaded
                             </>
                           ) : (
                             <>
                               <Sparkles className="h-4 w-4 mr-2" />
-                              Verify & Download AI Certificate
+                              Verify & Download Certificate
                             </>
                           )}
                         </Button>
@@ -234,8 +265,7 @@ export default function CertificateDownloadPage() {
                       <span className="font-medium">AI Achievement Verified!</span>
                     </div>
                     <p className="text-sm text-green-700 dark:text-green-300 mt-1">
-                      Your AI program certificate download should begin automatically. Congratulations on mastering
-                      artificial intelligence!
+                      Your certificate download has started. Congratulations!
                     </p>
                   </div>
                 )}
