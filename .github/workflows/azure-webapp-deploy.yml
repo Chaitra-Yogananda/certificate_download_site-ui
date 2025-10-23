@@ -11,7 +11,8 @@ on:
 
 env:
   NODE_VERSION: '20.x'
-  AZURE_WEBAPP_PACKAGE_PATH: 'dist'
+  WORKING_DIR: 'certificate_download_site-ui'
+  AZURE_WEBAPP_PACKAGE_PATH: 'certificate_download_site-ui/dist'
 
 jobs:
   build:
@@ -26,12 +27,19 @@ jobs:
       with:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
+        cache-dependency-path: ${{ env.WORKING_DIR }}/package-lock.json
 
     - name: Install dependencies
       run: npm ci
+      working-directory: ${{ env.WORKING_DIR }}
 
     - name: Build application
+      env:
+          VITE_MSAL_CLIENT_ID: ${{ secrets.VITE_MSAL_CLIENT_ID }}
+          VITE_MSAL_TENANT_ID: ${{ secrets.VITE_MSAL_TENANT_ID }}
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
       run: npm run build
+      working-directory: ${{ env.WORKING_DIR }}
 
     - name: Upload artifact for deployment
       uses: actions/upload-artifact@v4
