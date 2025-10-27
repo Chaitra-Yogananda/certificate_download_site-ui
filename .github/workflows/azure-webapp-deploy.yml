@@ -26,6 +26,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Detect app directory
+        id: detect-dir
+        shell: bash
+        run: |
+          if [ -f "certificate_download_site-ui/package.json" ] && [ -f "certificate_download_site-ui/vite.config.js" ]; then
+            echo "app_dir=certificate_download_site-ui" >> $GITHUB_OUTPUT
+          else
+            echo "app_dir=." >> $GITHUB_OUTPUT
+          fi
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -34,19 +44,46 @@ jobs:
           cache-dependency-path: '**/package-lock.json'
 
       - name: Install dependencies
-        run: npm ci
-        working-directory: ${{ env.APP_DIR }}
-
-      - name: Build application
-        run: npm run build
-        working-directory: ${{ env.APP_DIR }}
-
-      - name: Ensure SPA rewrite web.config is in dist
         shell: bash
         run: |
-          if [ -f "${{ env.APP_DIR }}/public/web.config" ]; then
-            mkdir -p "${{ env.AZURE_WEBAPP_PACKAGE_PATH }}"
-            cp -f "${{ env.APP_DIR }}/public/web.config" "${{ env.AZURE_WEBAPP_PACKAGE_PATH }}/web.config"
+          APP_DIR="${{ steps.detect-dir.outputs.app_dir }}"
+          if [ "$APP_DIR" = "." ]; then
+            npm ci
+          else
+            npm --prefix "$APP_DIR" ci
+          fi
+
+      - name: Build application
+        shell: bash
+        run: |
+          APP_DIR="${{ steps.detect-dir.outputs.app_dir }}"
+          if [ "$APP_DIR" = "." ]; then
+            npm run build
+          else
+            npm --prefix "$APP_DIR" run build
+          fi
+
+      - name: Prepare dist artifact (copy build and web.config)
+        shell: bash
+        run: |
+          set -e
+          APP_DIR="${{ steps.detect-dir.outputs.app_dir }}"
+          # Determine where Vite wrote the build (depends on outDir and APP_DIR)
+          if [ "$APP_DIR" = "." ]; then
+            SRC="../dist"
+          else
+            SRC="dist"
+          fi
+          mkdir -p dist
+          if [ "$SRC" != "dist" ] && [ -d "$SRC" ]; then
+            shopt -s dotglob nullglob
+            cp -R "$SRC"/* dist/
+            shopt -u dotglob nullglob
+          fi
+          # Ensure SPA fallback web.config is present
+          WEB_SRC="$APP_DIR/public/web.config"
+          if [ -f "$WEB_SRC" ]; then
+            cp -f "$WEB_SRC" dist/web.config
           fi
 
       - name: Upload artifact for deployment
