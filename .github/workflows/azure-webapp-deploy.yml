@@ -11,53 +11,69 @@ on:
 
 env:
   NODE_VERSION: '20.x'
+  APP_DIR: 'certificate_download_site-ui'
   AZURE_WEBAPP_PACKAGE_PATH: 'dist'
+
+concurrency:
+  group: deploy-azure-webapp
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.APP_DIR }}/package-lock.json
 
-    - name: Install dependencies
-      run: npm ci
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ${{ env.APP_DIR }}
 
-    - name: Build application
-      run: npm run build
+      - name: Build application
+        run: npm run build
+        working-directory: ${{ env.APP_DIR }}
 
-    - name: Upload artifact for deployment
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-artifact
-        path: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+      - name: Ensure SPA rewrite web.config is in dist
+        shell: bash
+        run: |
+          if [ -f "${{ env.APP_DIR }}/public/web.config" ]; then
+            mkdir -p "${{ env.AZURE_WEBAPP_PACKAGE_PATH }}"
+            cp -f "${{ env.APP_DIR }}/public/web.config" "${{ env.AZURE_WEBAPP_PACKAGE_PATH }}/web.config"
+          fi
+
+      - name: Upload artifact for deployment
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifact
+          path: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
-    # if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request'
     environment:
       name: 'Production'
       url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
 
     steps:
-    - name: Download artifact from build job
-      uses: actions/download-artifact@v4
-      with:
-        name: build-artifact
-        path: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifact
+          path: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
 
-    - name: Deploy to Azure Web App
-      id: deploy-to-webapp
-      uses: azure/webapps-deploy@v2
-      with:
-        app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
-        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-        package: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+      - name: Deploy to Azure Web App
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
