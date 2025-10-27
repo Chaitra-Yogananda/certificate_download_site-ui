@@ -16,6 +16,15 @@ export function useMsalProfile({ appendEmailToUrl = true } = {}) {
 
   useEffect(() => {
     async function ensureLoginAndCacheProfile() {
+      const tenantIdEnv = import.meta.env.VITE_MSAL_TENANT_ID
+      const clientIdEnv = import.meta.env.VITE_MSAL_CLIENT_ID
+      const allowedDomain = import.meta.env.VITE_ALLOWED_EMAIL_DOMAIN
+      const configured = Boolean(tenantIdEnv && clientIdEnv && clientIdEnv !== '00000000-0000-0000-0000-000000000000')
+
+      if (!configured) {
+        return
+      }
+
       let account = instance.getActiveAccount()
       if (!account) {
         // Trigger login
@@ -23,26 +32,59 @@ export function useMsalProfile({ appendEmailToUrl = true } = {}) {
         return
       }
 
+      const claims = account.idTokenClaims || {}
+      const tokenTenantId = claims.tid
+      const objectId = claims.oid
+
+      if (tenantIdEnv && tokenTenantId && tokenTenantId !== tenantIdEnv) {
+        localStorage.clear()
+        await instance.logoutRedirect()
+        return
+      }
+
       let userEmail = account.username || account.mail || account.userPrincipalName
       let userName = account.name || ''
+      let userType = ''
 
       // Try Graph for most accurate profile
       try {
         const token = await instance.acquireTokenSilent(loginRequest)
-        const res = await fetch('https://graph.microsoft.com/v1.0/me', {
+        const res = await fetch('https://graph.microsoft.com/v1.0/me?$select=displayName,mail,userPrincipalName,userType', {
           headers: { Authorization: `Bearer ${token.accessToken}` },
         })
         if (res.ok) {
           const me = await res.json()
           userEmail = me.mail || me.userPrincipalName || userEmail
           userName = me.displayName || userName
+          userType = me.userType || userType
         }
       } catch (_) {
         // ignore and fallback to account info
       }
 
+      if (userType && userType !== 'Member') {
+        localStorage.clear()
+        await instance.logoutRedirect()
+        return
+      }
+
+      if (allowedDomain && userEmail) {
+        const emailLower = String(userEmail).toLowerCase()
+        const domainLower = String(allowedDomain).toLowerCase()
+        if (!emailLower.endsWith(`@${domainLower}`)) {
+          localStorage.clear()
+          await instance.logoutRedirect()
+          return
+        }
+      }
+
       if (userEmail) localStorage.setItem('userEmail', userEmail)
       if (userName) localStorage.setItem('userName', userName)
+      if (tokenTenantId) localStorage.setItem('userTenantId', tokenTenantId)
+      if (objectId) localStorage.setItem('userObjectId', objectId)
+      if (userType) localStorage.setItem('userType', userType)
+      localStorage.setItem('loginProvider', 'msal')
+      localStorage.setItem('loginTime', new Date().toISOString())
 
       if (appendEmailToUrl && userEmail) {
         const url = new URL(window.location.href)
