@@ -93,19 +93,6 @@ export function useMsalProfile({ appendEmailToUrl = true } = {}) {
           window.history.replaceState({}, '', url.toString())
         }
       }
-
-      const hasEmail = !!localStorage.getItem('userEmail')
-      const hasName = !!localStorage.getItem('userName')
-      if (!hasEmail || !hasName) {
-        const retried = sessionStorage.getItem('msalRetryMissingProfile')
-        if (!retried) {
-          sessionStorage.setItem('msalRetryMissingProfile', '1')
-          await instance.loginRedirect({ ...loginRequest, prompt: 'select_account' })
-          return
-        }
-      } else {
-        sessionStorage.removeItem('msalRetryMissingProfile')
-      }
     }
 
     ensureLoginAndCacheProfile().catch(() => {})
