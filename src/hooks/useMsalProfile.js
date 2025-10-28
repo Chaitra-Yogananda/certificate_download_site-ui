@@ -16,9 +16,10 @@ export function useMsalProfile({ appendEmailToUrl = true } = {}) {
 
   useEffect(() => {
     async function ensureLoginAndCacheProfile() {
-      const tenantIdEnv = import.meta.env.VITE_MSAL_TENANT_ID
-      const clientIdEnv = import.meta.env.VITE_MSAL_CLIENT_ID
-      const allowedDomain = import.meta.env.VITE_ALLOWED_EMAIL_DOMAIN
+      const RUNTIME = (typeof window !== 'undefined' && window.__RUNTIME_CONFIG__) || {}
+      const tenantIdEnv = RUNTIME.MSAL_TENANT_ID || import.meta.env.VITE_MSAL_TENANT_ID
+      const clientIdEnv = RUNTIME.MSAL_CLIENT_ID || import.meta.env.VITE_MSAL_CLIENT_ID
+      const allowedDomain = RUNTIME.ALLOWED_EMAIL_DOMAIN || import.meta.env.VITE_ALLOWED_EMAIL_DOMAIN
       const configured = Boolean(tenantIdEnv && clientIdEnv && clientIdEnv !== '00000000-0000-0000-0000-000000000000')
 
       if (!configured) {
