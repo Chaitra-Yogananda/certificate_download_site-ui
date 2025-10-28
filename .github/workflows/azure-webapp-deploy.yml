@@ -53,8 +53,29 @@ jobs:
             npm --prefix "$APP_DIR" ci
           fi
 
+      - name: Create .env.production from secrets
+        shell: bash
+        run: |
+          set -e
+          APP_DIR="${{ steps.detect-dir.outputs.app_dir }}"
+          mkdir -p "$APP_DIR"
+          cat > "$APP_DIR/.env.production" <<EOF
+          VITE_MSAL_TENANT_ID=${{ secrets.VITE_MSAL_TENANT_ID }}
+          VITE_MSAL_CLIENT_ID=${{ secrets.VITE_MSAL_CLIENT_ID }}
+          VITE_MSAL_AUTHORITY=${{ secrets.VITE_MSAL_AUTHORITY }}
+          VITE_ALLOWED_EMAIL_DOMAIN=${{ secrets.VITE_ALLOWED_EMAIL_DOMAIN }}
+          VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}
+          VITE_REDIRECT_URI=${{ secrets.VITE_REDIRECT_URI }}
+          EOF
+
       - name: Build application
         shell: bash
+        env:
+          VITE_MSAL_TENANT_ID: ${{ secrets.VITE_MSAL_TENANT_ID }}
+          VITE_MSAL_CLIENT_ID: ${{ secrets.VITE_MSAL_CLIENT_ID }}
+          VITE_MSAL_AUTHORITY: ${{ secrets.VITE_MSAL_AUTHORITY }}
+          VITE_ALLOWED_EMAIL_DOMAIN: ${{ secrets.VITE_ALLOWED_EMAIL_DOMAIN }}
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
         run: |
           APP_DIR="${{ steps.detect-dir.outputs.app_dir }}"
           if [ "$APP_DIR" = "." ]; then
@@ -63,27 +84,21 @@ jobs:
             npm --prefix "$APP_DIR" run build
           fi
 
-      - name: Prepare dist artifact (copy build and web.config)
+      - name: Prepare dist artifact (ensure web.config present)
         shell: bash
         run: |
           set -e
           APP_DIR="${{ steps.detect-dir.outputs.app_dir }}"
-          # Determine where Vite wrote the build (depends on outDir and APP_DIR)
-          if [ "$APP_DIR" = "." ]; then
-            SRC="../dist"
-          else
-            SRC="dist"
-          fi
-          mkdir -p dist
-          if [ "$SRC" != "dist" ] && [ -d "$SRC" ]; then
-            shopt -s dotglob nullglob
-            cp -R "$SRC"/* dist/
-            shopt -u dotglob nullglob
+          BUILD_DIR="dist" # Vite outDir is ../dist relative to APP_DIR
+          if [ ! -d "$BUILD_DIR" ]; then
+            echo "::error::Build output directory not found: $BUILD_DIR"
+            ls -la
+            exit 1
           fi
           # Ensure SPA fallback web.config is present
           WEB_SRC="$APP_DIR/public/web.config"
           if [ -f "$WEB_SRC" ]; then
-            cp -f "$WEB_SRC" dist/web.config
+            cp -f "$WEB_SRC" "$BUILD_DIR/web.config"
           fi
 
       - name: Upload artifact for deployment
@@ -106,6 +121,21 @@ jobs:
         with:
           name: build-artifact
           path: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+
+      - name: Set Azure App Settings
+        uses: azure/appservice-settings@v1
+        with:
+          app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          app-settings-json: |
+            [
+              { "name": "VITE_MSAL_TENANT_ID", "value": "${{ secrets.VITE_MSAL_TENANT_ID }}", "slotSetting": false },
+              { "name": "VITE_MSAL_CLIENT_ID", "value": "${{ secrets.VITE_MSAL_CLIENT_ID }}", "slotSetting": false },
+              { "name": "VITE_MSAL_AUTHORITY", "value": "${{ secrets.VITE_MSAL_AUTHORITY }}", "slotSetting": false },
+              { "name": "VITE_ALLOWED_EMAIL_DOMAIN", "value": "${{ secrets.VITE_ALLOWED_EMAIL_DOMAIN }}", "slotSetting": false },
+              { "name": "VITE_API_BASE_URL", "value": "${{ secrets.VITE_API_BASE_URL }}", "slotSetting": false },
+              { "name": "VITE_REDIRECT_URI", "value": "${{ secrets.VITE_REDIRECT_URI }}", "slotSetting": false }
+            ]
 
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
