@@ -8,11 +8,11 @@ export const msalConfig = {
     postLogoutRedirectUri: window.location.origin,
   },
   cache: {
-    cacheLocation: 'localStorage',
+    cacheLocation: 'sessionStorage',
     storeAuthStateInCookie: false,
   },
 };
 
 export const loginRequest = {
-  scopes: ['User.Read'],
+  scopes: ['User.Read', 'openid', 'profile'],
 };

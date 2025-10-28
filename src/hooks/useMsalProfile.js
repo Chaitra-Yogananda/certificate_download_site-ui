@@ -25,10 +25,14 @@ export function useMsalProfile({ appendEmailToUrl = true } = {}) {
         return
       }
 
+      const segments = window.location.pathname.split('/').filter(Boolean)
+      const courseCode = segments.length ? segments[segments.length - 1] : ''
+      if (courseCode) localStorage.setItem('courseCode', courseCode)
+
       let account = instance.getActiveAccount()
       if (!account) {
         // Trigger login
-        await instance.loginRedirect(loginRequest)
+        await instance.loginRedirect({ ...loginRequest, redirectStartPage: window.location.href })
         return
       }
 
