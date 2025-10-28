@@ -3,7 +3,7 @@ import { useIsAuthenticated, useMsal } from '@azure/msal-react'
 import { loginRequest } from '../auth/msalConfig'
 
 export function useMsalProfile({ appendEmailToUrl = true } = {}) {
-  const { instance, accounts } = useMsal()
+  const { instance, accounts, inProgress } = useMsal()
   const isAuthenticated = useIsAuthenticated()
 
   useEffect(() => {
@@ -25,14 +25,17 @@ export function useMsalProfile({ appendEmailToUrl = true } = {}) {
         return
       }
 
-      const segments = window.location.pathname.split('/').filter(Boolean)
-      const courseCode = segments.length ? segments[segments.length - 1] : ''
-      if (courseCode) localStorage.setItem('courseCode', courseCode)
+      const forcedKey = 'msalForcedLoginThisLoad'
+      if (inProgress === 'none' && !sessionStorage.getItem(forcedKey)) {
+        sessionStorage.setItem(forcedKey, '1')
+        await instance.loginRedirect({ ...loginRequest, prompt: 'select_account' })
+        return
+      }
 
       let account = instance.getActiveAccount()
-      if (!account) {
+      if (!account && inProgress === 'none') {
         // Trigger login
-        await instance.loginRedirect({ ...loginRequest, redirectStartPage: window.location.href })
+        await instance.loginRedirect({ ...loginRequest, prompt: 'select_account' })
         return
       }
 
@@ -42,6 +45,7 @@ export function useMsalProfile({ appendEmailToUrl = true } = {}) {
 
       if (tenantIdEnv && tokenTenantId && tokenTenantId !== tenantIdEnv) {
         localStorage.clear()
+        sessionStorage.clear()
         await instance.logoutRedirect()
         return
       }
@@ -68,6 +72,7 @@ export function useMsalProfile({ appendEmailToUrl = true } = {}) {
 
       if (userType && userType !== 'Member') {
         localStorage.clear()
+        sessionStorage.clear()
         await instance.logoutRedirect()
         return
       }
@@ -77,18 +82,22 @@ export function useMsalProfile({ appendEmailToUrl = true } = {}) {
         const domainLower = String(allowedDomain).toLowerCase()
         if (!emailLower.endsWith(`@${domainLower}`)) {
           localStorage.clear()
+          sessionStorage.clear()
           await instance.logoutRedirect()
           return
         }
       }
 
-      if (userEmail) localStorage.setItem('userEmail', userEmail)
-      if (userName) localStorage.setItem('userName', userName)
-      if (tokenTenantId) localStorage.setItem('userTenantId', tokenTenantId)
-      if (objectId) localStorage.setItem('userObjectId', objectId)
-      if (userType) localStorage.setItem('userType', userType)
+      if (userEmail) { localStorage.setItem('userEmail', userEmail); sessionStorage.setItem('userEmail', userEmail) }
+      if (userName) { localStorage.setItem('userName', userName); sessionStorage.setItem('userName', userName) }
+      if (tokenTenantId) { localStorage.setItem('userTenantId', tokenTenantId); sessionStorage.setItem('userTenantId', String(tokenTenantId)) }
+      if (objectId) { localStorage.setItem('userObjectId', objectId); sessionStorage.setItem('userObjectId', objectId) }
+      if (userType) { localStorage.setItem('userType', userType); sessionStorage.setItem('userType', userType) }
       localStorage.setItem('loginProvider', 'msal')
-      localStorage.setItem('loginTime', new Date().toISOString())
+      sessionStorage.setItem('loginProvider', 'msal')
+      const nowIso = new Date().toISOString()
+      localStorage.setItem('loginTime', nowIso)
+      sessionStorage.setItem('loginTime', nowIso)
 
       if (appendEmailToUrl && userEmail) {
         const url = new URL(window.location.href)
@@ -97,8 +106,21 @@ export function useMsalProfile({ appendEmailToUrl = true } = {}) {
           window.history.replaceState({}, '', url.toString())
         }
       }
+
+      const hasEmail = !!(localStorage.getItem('userEmail') || sessionStorage.getItem('userEmail'))
+      const hasName = !!(localStorage.getItem('userName') || sessionStorage.getItem('userName'))
+      if (!hasEmail || !hasName) {
+        const retried = sessionStorage.getItem('msalRetryMissingProfile')
+        if (!retried) {
+          sessionStorage.setItem('msalRetryMissingProfile', '1')
+          await instance.loginRedirect({ ...loginRequest, prompt: 'select_account' })
+          return
+        }
+      } else {
+        sessionStorage.removeItem('msalRetryMissingProfile')
+      }
     }
 
     ensureLoginAndCacheProfile().catch(() => {})
-  }, [instance, isAuthenticated, appendEmailToUrl])
+  }, [instance, isAuthenticated, appendEmailToUrl, inProgress])
 }

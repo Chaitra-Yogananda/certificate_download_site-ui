@@ -23,9 +23,14 @@ export default function CertificateDownloadPage() {
   const userEmail = useMemo(() => {
     try {
       const url = new URL(window.location.href)
-      return url.searchParams.get('email') || localStorage.getItem('userEmail') || ''
+      return (
+        url.searchParams.get('email') ||
+        localStorage.getItem('userEmail') ||
+        sessionStorage.getItem('userEmail') ||
+        ''
+      )
     } catch {
-      return localStorage.getItem('userEmail') || ''
+      return localStorage.getItem('userEmail') || sessionStorage.getItem('userEmail') || ''
     }
   }, [window.location.search])
 
