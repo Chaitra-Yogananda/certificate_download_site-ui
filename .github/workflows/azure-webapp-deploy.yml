@@ -101,6 +101,24 @@ jobs:
             cp -f "$WEB_SRC" "$BUILD_DIR/web.config"
           fi
 
+      - name: Generate runtime-config.js (runtime config for SPA)
+        shell: bash
+        run: |
+          set -e
+          cat > dist/runtime-config.js <<'EOF'
+          (function(w){
+            w.__RUNTIME_CONFIG__ = {
+              MSAL_TENANT_ID: "${{ secrets.VITE_MSAL_TENANT_ID }}",
+              MSAL_CLIENT_ID: "${{ secrets.VITE_MSAL_CLIENT_ID }}",
+              MSAL_AUTHORITY: "${{ secrets.VITE_MSAL_AUTHORITY }}",
+              REDIRECT_URI: "${{ secrets.VITE_REDIRECT_URI }}",
+              ALLOWED_EMAIL_DOMAIN: "${{ secrets.VITE_ALLOWED_EMAIL_DOMAIN }}",
+              API_BASE_URL: "${{ secrets.VITE_API_BASE_URL }}"
+            };
+            w.__API_BASE_URL__ = w.__RUNTIME_CONFIG__.API_BASE_URL || w.__API_BASE_URL__;
+          })(window);
+          EOF
+
       - name: Upload artifact for deployment
         uses: actions/upload-artifact@v4
         with:
@@ -122,11 +140,17 @@ jobs:
           name: build-artifact
           path: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
 
+      - name: Azure login (optional for app settings)
+        if: ${{ secrets.AZURE_CREDENTIALS != '' }}
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
       - name: Set Azure App Settings
+        if: ${{ secrets.AZURE_CREDENTIALS != '' && secrets.AZURE_WEBAPP_NAME != '' }}
         uses: azure/appservice-settings@v1
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
           app-settings-json: |
             [
               { "name": "VITE_MSAL_TENANT_ID", "value": "${{ secrets.VITE_MSAL_TENANT_ID }}", "slotSetting": false },
