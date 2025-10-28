@@ -21,6 +21,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      package_path: ${{ steps.prepare.outputs.package_path }}
 
     steps:
       - name: Checkout code
@@ -30,8 +32,11 @@ jobs:
         id: detect-dir
         shell: bash
         run: |
-          if [ -f "certificate_download_site-ui/package.json" ] && [ -f "certificate_download_site-ui/vite.config.js" ]; then
+          ROOT="${GITHUB_WORKSPACE:-.}"
+          if [ -f "$ROOT/certificate_download_site-ui/package.json" ] && [ -f "$ROOT/certificate_download_site-ui/vite.config.js" ]; then
             echo "app_dir=certificate_download_site-ui" >> $GITHUB_OUTPUT
+          elif [ -f "package.json" ] && [ -f "vite.config.js" ]; then
+            echo "app_dir=." >> $GITHUB_OUTPUT
           else
             echo "app_dir=." >> $GITHUB_OUTPUT
           fi
@@ -85,27 +90,44 @@ jobs:
           fi
 
       - name: Prepare build artifact (ensure web.config present)
+        id: prepare
         shell: bash
         run: |
           set -e
           APP_DIR="${{ steps.detect-dir.outputs.app_dir }}"
-          BUILD_DIR="build" # Vite outDir is ../build relative to APP_DIR
-          if [ ! -d "$BUILD_DIR" ]; then
-            echo "::error::Build output directory not found: $BUILD_DIR"
-            ls -la
+          ROOT="${GITHUB_WORKSPACE:-$(pwd)}"
+          # Determine actual build output directory relative to repo root
+          if [ -d "$ROOT/build" ]; then
+            PACKAGE_REL="build"
+          elif [ -d "$ROOT/dist" ]; then
+            PACKAGE_REL="dist"
+          elif [ -d "$ROOT/$APP_DIR/build" ]; then
+            PACKAGE_REL="$APP_DIR/build"
+          elif [ -d "$ROOT/$APP_DIR/dist" ]; then
+            PACKAGE_REL="$APP_DIR/dist"
+          else
+            echo "::error::Build output directory not found (checked $ROOT/build, $ROOT/dist, $ROOT/$APP_DIR/build, $ROOT/$APP_DIR/dist)"
+            echo "Root listing ($ROOT):" && ls -la "$ROOT" || true
+            echo "$APP_DIR listing ($ROOT/$APP_DIR):" && ls -la "$ROOT/$APP_DIR" || true
             exit 1
           fi
+
+          # Propagate the resolved package path to later steps in this job (relative to repo root)
+          echo "AZURE_WEBAPP_PACKAGE_PATH=$PACKAGE_REL" >> "$GITHUB_ENV"
+          echo "package_path=$PACKAGE_REL" >> "$GITHUB_OUTPUT"
+
           # Ensure SPA fallback web.config is present
-          WEB_SRC="$APP_DIR/public/web.config"
+          WEB_SRC="$ROOT/$APP_DIR/public/web.config"
           if [ -f "$WEB_SRC" ]; then
-            cp -f "$WEB_SRC" "$BUILD_DIR/web.config"
+            cp -f "$WEB_SRC" "$ROOT/$PACKAGE_REL/web.config"
           fi
 
       - name: Generate runtime-config.js (runtime config for SPA)
         shell: bash
         run: |
           set -e
-          cat > build/runtime-config.js <<'EOF'
+          PACKAGE_PATH='${{ steps.prepare.outputs.package_path }}'
+          cat > "$PACKAGE_PATH/runtime-config.js" <<'EOF'
           (function(w){
             w.__RUNTIME_CONFIG__ = {
               MSAL_TENANT_ID: "${{ secrets.VITE_MSAL_TENANT_ID }}",
@@ -123,7 +145,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-artifact
-          path: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+          path: ${{ steps.prepare.outputs.package_path }}
 
   deploy:
     runs-on: ubuntu-latest
@@ -138,7 +160,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-artifact
-          path: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+          path: ${{ needs.build.outputs.package_path }}
 
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
@@ -146,4 +168,4 @@ jobs:
         with:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+          package: ${{ needs.build.outputs.package_path }}
