@@ -11,119 +11,33 @@ on:
 
 env:
   NODE_VERSION: '20.x'
-  APP_DIR: 'certificate_download_site-ui'
   AZURE_WEBAPP_PACKAGE_PATH: 'dist'
-
-concurrency:
-  group: deploy-azure-webapp
-  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      - name: Detect app directory
-        id: detect-dir
-        shell: bash
-        run: |
-          if [ -f "certificate_download_site-ui/package.json" ] && [ -f "certificate_download_site-ui/vite.config.js" ]; then
-            echo "app_dir=certificate_download_site-ui" >> $GITHUB_OUTPUT
-          else
-            echo "app_dir=." >> $GITHUB_OUTPUT
-          fi
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: '**/package-lock.json'
+    - name: Install dependencies
+      run: npm ci
 
-      - name: Install dependencies
-        shell: bash
-        run: |
-          APP_DIR="${{ steps.detect-dir.outputs.app_dir }}"
-          if [ "$APP_DIR" = "." ]; then
-            npm ci
-          else
-            npm --prefix "$APP_DIR" ci
-          fi
+    - name: Build application
+      run: npm run build
 
-      - name: Create .env.production from secrets
-        shell: bash
-        run: |
-          set -e
-          APP_DIR="${{ steps.detect-dir.outputs.app_dir }}"
-          mkdir -p "$APP_DIR"
-          cat > "$APP_DIR/.env.production" <<EOF
-          VITE_MSAL_TENANT_ID=${{ secrets.VITE_MSAL_TENANT_ID }}
-          VITE_MSAL_CLIENT_ID=${{ secrets.VITE_MSAL_CLIENT_ID }}
-          VITE_MSAL_AUTHORITY=${{ secrets.VITE_MSAL_AUTHORITY }}
-          VITE_ALLOWED_EMAIL_DOMAIN=${{ secrets.VITE_ALLOWED_EMAIL_DOMAIN }}
-          VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}
-          VITE_REDIRECT_URI=${{ secrets.VITE_REDIRECT_URI }}
-          EOF
-
-      - name: Build application
-        shell: bash
-        env:
-          VITE_MSAL_TENANT_ID: ${{ secrets.VITE_MSAL_TENANT_ID }}
-          VITE_MSAL_CLIENT_ID: ${{ secrets.VITE_MSAL_CLIENT_ID }}
-          VITE_MSAL_AUTHORITY: ${{ secrets.VITE_MSAL_AUTHORITY }}
-          VITE_ALLOWED_EMAIL_DOMAIN: ${{ secrets.VITE_ALLOWED_EMAIL_DOMAIN }}
-          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
-        run: |
-          APP_DIR="${{ steps.detect-dir.outputs.app_dir }}"
-          if [ "$APP_DIR" = "." ]; then
-            npm run build
-          else
-            npm --prefix "$APP_DIR" run build
-          fi
-
-      - name: Prepare dist artifact (ensure web.config present)
-        shell: bash
-        run: |
-          set -e
-          APP_DIR="${{ steps.detect-dir.outputs.app_dir }}"
-          BUILD_DIR="dist" # Vite outDir is ../dist relative to APP_DIR
-          if [ ! -d "$BUILD_DIR" ]; then
-            echo "::error::Build output directory not found: $BUILD_DIR"
-            ls -la
-            exit 1
-          fi
-          # Ensure SPA fallback web.config is present
-          WEB_SRC="$APP_DIR/public/web.config"
-          if [ -f "$WEB_SRC" ]; then
-            cp -f "$WEB_SRC" "$BUILD_DIR/web.config"
-          fi
-
-      - name: Generate runtime-config.js (runtime config for SPA)
-        shell: bash
-        run: |
-          set -e
-          cat > dist/runtime-config.js <<'EOF'
-          (function(w){
-            w.__RUNTIME_CONFIG__ = {
-              MSAL_TENANT_ID: "${{ secrets.VITE_MSAL_TENANT_ID }}",
-              MSAL_CLIENT_ID: "${{ secrets.VITE_MSAL_CLIENT_ID }}",
-              MSAL_AUTHORITY: "${{ secrets.VITE_MSAL_AUTHORITY }}",
-              REDIRECT_URI: "${{ secrets.VITE_REDIRECT_URI }}",
-              ALLOWED_EMAIL_DOMAIN: "${{ secrets.VITE_ALLOWED_EMAIL_DOMAIN }}",
-              API_BASE_URL: "${{ secrets.VITE_API_BASE_URL }}"
-            };
-            w.__API_BASE_URL__ = w.__RUNTIME_CONFIG__.API_BASE_URL || w.__API_BASE_URL__;
-          })(window);
-          EOF
-
-      - name: Upload artifact for deployment
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifact
-          path: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+    - name: Upload artifact for deployment
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifact
+        path: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
 
   deploy:
     runs-on: ubuntu-latest
@@ -134,16 +48,16 @@ jobs:
       url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
 
     steps:
-      - name: Download artifact from build job
-        uses: actions/download-artifact@v4
-        with:
-          name: build-artifact
-          path: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+    - name: Download artifact from build job
+      uses: actions/download-artifact@v4
+      with:
+        name: build-artifact
+        path: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
 
-      - name: Deploy to Azure Web App
-        id: deploy-to-webapp
-        uses: azure/webapps-deploy@v2
-        with:
-          app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+    - name: Deploy to Azure Web App
+      id: deploy-to-webapp
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+        publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+        package: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
