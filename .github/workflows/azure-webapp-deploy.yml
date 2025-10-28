@@ -140,27 +140,6 @@ jobs:
           name: build-artifact
           path: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
 
-      - name: Azure login (optional for app settings)
-        if: ${{ secrets.AZURE_CREDENTIALS != '' }}
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Set Azure App Settings
-        if: ${{ secrets.AZURE_CREDENTIALS != '' && secrets.AZURE_WEBAPP_NAME != '' }}
-        uses: azure/appservice-settings@v1
-        with:
-          app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
-          app-settings-json: |
-            [
-              { "name": "VITE_MSAL_TENANT_ID", "value": "${{ secrets.VITE_MSAL_TENANT_ID }}", "slotSetting": false },
-              { "name": "VITE_MSAL_CLIENT_ID", "value": "${{ secrets.VITE_MSAL_CLIENT_ID }}", "slotSetting": false },
-              { "name": "VITE_MSAL_AUTHORITY", "value": "${{ secrets.VITE_MSAL_AUTHORITY }}", "slotSetting": false },
-              { "name": "VITE_ALLOWED_EMAIL_DOMAIN", "value": "${{ secrets.VITE_ALLOWED_EMAIL_DOMAIN }}", "slotSetting": false },
-              { "name": "VITE_API_BASE_URL", "value": "${{ secrets.VITE_API_BASE_URL }}", "slotSetting": false },
-              { "name": "VITE_REDIRECT_URI", "value": "${{ secrets.VITE_REDIRECT_URI }}", "slotSetting": false }
-            ]
-
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v2
