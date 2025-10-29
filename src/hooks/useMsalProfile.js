@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useIsAuthenticated, useMsal } from '@azure/msal-react'
 import { loginRequest } from '../auth/msalConfig'
 
-export function useMsalProfile({ appendEmailToUrl = true } = {}) {
+export function useMsalProfile({ appendEmailToUrl = true, manageLogin = false } = {}) {
   const { instance, accounts, inProgress } = useMsal()
   const isAuthenticated = useIsAuthenticated()
 
@@ -27,20 +27,21 @@ export function useMsalProfile({ appendEmailToUrl = true } = {}) {
       }
 
       const forcedKey = 'msalForcedLoginThisLoad'
-      if (inProgress === 'none' && !sessionStorage.getItem(forcedKey)) {
+      if (manageLogin && inProgress === 'none' && !sessionStorage.getItem(forcedKey)) {
         sessionStorage.setItem(forcedKey, '1')
         await instance.loginRedirect({ ...loginRequest, prompt: 'select_account' })
         return
       }
 
       let account = instance.getActiveAccount()
-      if (!account && inProgress === 'none') {
-        // Trigger login
-        await instance.loginRedirect({ ...loginRequest, prompt: 'select_account' })
+      if (!account) {
+        if (manageLogin && inProgress === 'none') {
+          await instance.loginRedirect({ ...loginRequest, prompt: 'select_account' })
+        }
         return
       }
 
-      const claims = account.idTokenClaims || {}
+      const claims = (account && account.idTokenClaims) || {}
       const tokenTenantId = claims.tid
       const objectId = claims.oid
 
@@ -63,6 +64,7 @@ export function useMsalProfile({ appendEmailToUrl = true } = {}) {
         })
         if (res.ok) {
           const me = await res.json()
+          console.log(JSON.stringify(me))
           userEmail = me.mail || me.userPrincipalName || userEmail
           userName = me.displayName || userName
           userType = me.userType || userType
@@ -112,7 +114,7 @@ export function useMsalProfile({ appendEmailToUrl = true } = {}) {
       const hasName = !!(localStorage.getItem('userName') || sessionStorage.getItem('userName'))
       if (!hasEmail || !hasName) {
         const retried = sessionStorage.getItem('msalRetryMissingProfile')
-        if (!retried) {
+        if (!retried && manageLogin) {
           sessionStorage.setItem('msalRetryMissingProfile', '1')
           await instance.loginRedirect({ ...loginRequest, prompt: 'select_account' })
           return
@@ -123,5 +125,5 @@ export function useMsalProfile({ appendEmailToUrl = true } = {}) {
     }
 
     ensureLoginAndCacheProfile().catch(() => {})
-  }, [instance, isAuthenticated, appendEmailToUrl, inProgress])
+  }, [instance, isAuthenticated, appendEmailToUrl, inProgress, manageLogin])
 }
