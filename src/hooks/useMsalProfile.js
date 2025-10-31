@@ -34,6 +34,11 @@ export function useMsalProfile({ appendEmailToUrl = true, manageLogin = false } 
       }
 
       let account = instance.getActiveAccount()
+
+      if (!account && accounts.length > 0) {
+        instance.setActiveAccount(accounts[0])
+        account = accounts[0]
+      }
       if (!account) {
         if (manageLogin && inProgress === 'none') {
           await instance.loginRedirect({ ...loginRequest, prompt: 'select_account' })
@@ -74,7 +79,7 @@ export function useMsalProfile({ appendEmailToUrl = true, manageLogin = false } 
       }
 
       if (userType && userType !== 'Member') {
-        localStorage.clear()
+        localStorage.clear()  
         sessionStorage.clear()
         await instance.logoutRedirect()
         return
@@ -90,7 +95,7 @@ export function useMsalProfile({ appendEmailToUrl = true, manageLogin = false } 
           return
         }
       }
-
+console.log("account", userEmail,userName,userType,tokenTenantId,objectId)
       if (userEmail) { localStorage.setItem('userEmail', userEmail); sessionStorage.setItem('userEmail', userEmail) }
       if (userName) { localStorage.setItem('userName', userName); sessionStorage.setItem('userName', userName) }
       if (tokenTenantId) { localStorage.setItem('userTenantId', tokenTenantId); sessionStorage.setItem('userTenantId', String(tokenTenantId)) }
@@ -125,5 +130,5 @@ export function useMsalProfile({ appendEmailToUrl = true, manageLogin = false } 
     }
 
     ensureLoginAndCacheProfile().catch(() => {})
-  }, [instance, isAuthenticated, appendEmailToUrl, inProgress, manageLogin])
+  }, [instance, isAuthenticated, appendEmailToUrl, inProgress, manageLogin, accounts])
 }
